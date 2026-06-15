@@ -81,3 +81,70 @@ func copyFile(src, dst string) error {
 	return nil
 }
 
+func copyTree(src, dst string) error {
+	return filepath.Walk(src, func(p string, fi os.FileInfo, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if fi.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(src, p)
+		return copyFile(p, filepath.Join(dst, rel))
+	})
+}
+
+type CountStats struct {
+	Count int
+	Bytes int64
+}
+
+// CountObjects sums loose object count + on-disk size (compressed).
+func (r *Repo) CountObjects() (CountStats, error) {
+	var cs CountStats
+	objs, err := r.ListObjects()
+	if err != nil {
+		return cs, err
+	}
+	cs.Count = len(objs)
+	for _, sha := range objs {
+		if fi, err := os.Stat(r.objPath(sha)); err == nil {
+			cs.Bytes += fi.Size()
+		}
+	}
+	return cs, nil
+}
+
+// VerifyRef is a tiny sanity check used by tests: does ref resolve to a real
+// commit object in the store?
+func (r *Repo) VerifyRef(ref string) error {
+	sha, err := r.RefSha(ref)
+	if err != nil {
+		return err
+	}
+	if sha == "" {
+		return fmt.Errorf("ref %q missing", ref)
+	}
+	o, err := r.Read(sha)
+	if err != nil {
+		return err
+	}
+	if o.Type != TCommit && o.Type != TTag {
+		return fmt.Errorf("ref %q -> %s object", ref, o.Type)
+	}
+	return nil
+}
+
+// describeHead is a small convenience: short summary of where HEAD is.
+func (r *Repo) describeHead() string {
+	if b := r.CurrentBranch(); b != "" {
+		return "branch " + b
+	}
+	_, sha, _ := r.ReadHEAD()
+	return "detached at " + Abbrev(sha)
+}
+
+var _ = strings.TrimSpace
