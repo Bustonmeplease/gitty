@@ -93,3 +93,24 @@ func (r *Repo) Blame(path string) ([]BlameLine, error) {
 		prevText = text
 	}
 
+	out := make([]BlameLine, len(cur))
+	for i, e := range cur {
+		out[i] = BlameLine{Commit: e.commit, Author: e.author, Text: e.text}
+	}
+	return out, nil
+}
+
+func FormatBlame(lines []BlameLine) string {
+	var sb strings.Builder
+	for i, l := range lines {
+		fmt.Fprintf(&sb, "%s (%-12s %4d) %s\n", Abbrev(l.Commit), trunc(l.Author, 12), i+1, l.Text)
+	}
+	return sb.String()
+}
+
+func trunc(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
