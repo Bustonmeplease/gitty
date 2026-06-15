@@ -118,3 +118,80 @@ func splitMsg(m string) []string {
 	return out
 }
 
+func doDiff(r *gitobj.Repo, only string) error {
+	// diff = index (or HEAD) blob vs working tree, per modified file
+	idx, err := r.LoadIndex()
+	if err != nil {
+		return err
+	}
+	if only != "" {
+		only = toRel(r, only)
+	}
+	any := false
+	for _, e := range idx.Entries {
+		if only != "" && e.Path != only {
+			continue
+		}
+		fp := filepath.Join(r.Root, filepath.FromSlash(e.Path))
+		wd, err := os.ReadFile(fp)
+		if err != nil {
+			continue // gone; rm handles that, skip in diff
+		}
+		if gitobj.HashRaw(gitobj.TBlob, wd) == e.Sha {
+			continue // unchanged
+		}
+		o, err := r.Read(e.Sha)
+		if err != nil {
+			return err
+		}
+		fmt.Print(gitobj.UnifiedDiff(e.Path, string(o.Data), string(wd)))
+		any = true
+	}
+	if !any {
+		// nothing changed; stay quiet like git does
+		_ = any
+	}
+	return nil
+}
+
+func doTag(r *gitobj.Repo, args []string) error {
+	if len(args) == 0 {
+		tags, err := r.ListTags()
+		if err != nil {
+			return err
+		}
+		for _, t := range tags {
+			fmt.Println(t)
+		}
+		return nil
+	}
+	annotate := false
+	msg := ""
+	name := ""
+	target := "HEAD"
+	// positionals can come in any order relative to flags; first positional is
+	// the tag name, second (if any) is the target.
+	var pos []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-a":
+			annotate = true
+		case "-m":
+			if i+1 < len(args) {
+				msg = args[i+1]
+				i++
+				annotate = true
+			}
+		default:
+			pos = append(pos, args[i])
+		}
+	}
+	if len(pos) == 0 {
+		return fmt.Errorf("tag: need a name")
+	}
+	name = pos[0]
+	if len(pos) > 1 {
+		target = pos[1]
+	}
+	return r.MakeTag(name, target, annotate, whoami(), msg)
+}
