@@ -1,0 +1,6 @@
+/gitty
+gitty
+*.test
+*.out
+.gitty/
+/tmp/
